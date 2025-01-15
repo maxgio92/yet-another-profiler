@@ -9,11 +9,12 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/maxgio92/yap/pkg/symtable"
-
 	bpf "github.com/aquasecurity/libbpfgo"
 	"github.com/pkg/errors"
 	log "github.com/rs/zerolog"
+
+	"github.com/maxgio92/yap/pkg/dag"
+	"github.com/maxgio92/yap/pkg/symtable"
 )
 
 type HistogramKey struct {
@@ -51,7 +52,7 @@ func NewProfiler(opts ...ProfileOption) *Profiler {
 	return profile
 }
 
-func (p *Profiler) RunProfile(ctx context.Context) (map[string]float64, error) {
+func (p *Profiler) RunProfile(ctx context.Context) (*dag.DAG, error) {
 	bpf.SetLoggerCbs(bpf.Callbacks{
 		Log: func(level int, msg string) {
 			return
@@ -104,10 +105,12 @@ func (p *Profiler) RunProfile(ctx context.Context) (map[string]float64, error) {
 	}
 
 	// Iterate over the stack profile counts histogramMap map.
-	histogram := make(map[string]int, 0)
-	p.logger.Debug().Msg("iterating over the retrieved histogramMap items")
+	counts := make(map[string]int, 0)
+	traces := make(map[string][]string, 0)
+	tree := dag.NewDAG()
+	totalCount := 0
 
-	totalSamples := 0
+	p.logger.Debug().Msg("iterating over the retrieved histogramMap items")
 
 	// Try to load symbols.
 	symbolizationWG := &sync.WaitGroup{}
@@ -152,7 +155,8 @@ func (p *Profiler) RunProfile(ctx context.Context) (map[string]float64, error) {
 		}
 		p.logger.Debug().Int("pid", p.pid).Uint32("user_stack_id", key.UserStackId).Uint32("kernel_stack_id", key.KernelStackId).Int("count", count).Msg("got stack traces")
 
-		var symbols string
+		// symbols contains the symbols list for current trace of the kernel and user stacks.
+		symbols := make([]string, 0)
 
 		// Wait for the symbols to be loaded.
 		symbolizationWG.Wait()
@@ -164,7 +168,7 @@ func (p *Profiler) RunProfile(ctx context.Context) (map[string]float64, error) {
 				p.logger.Err(err).Uint32("id", key.UserStackId).Msg("error getting user stack trace")
 				return nil, errors.Wrap(err, "error getting user stack")
 			}
-			symbols += p.getHumanReadableStackTrace(stackTrace)
+			symbols = append(symbols, p.getHumanReadableStackTrace(stackTrace)...)
 		}
 
 		// Append symbols from kernel stack.
@@ -174,13 +178,36 @@ func (p *Profiler) RunProfile(ctx context.Context) (map[string]float64, error) {
 				p.logger.Err(err).Uint32("id", key.KernelStackId).Msg("error getting kernel stack trace")
 				return nil, errors.Wrap(err, "error getting kernel stack")
 			}
-			symbols += p.getHumanReadableStackTrace(stackTrace)
+			symbols = append(symbols, p.getHumanReadableStackTrace(stackTrace)...)
 		}
 
-		// Increment the histogram map value for the stack trace symbol string (e.g. "main;subfunc;")
-		totalSamples += count
-		histogram[symbols] += count
+		// Build a key for the histogram based on concatenated symbols.
+		var symbolsKey string
+		for _, symbol := range symbols {
+			symbolsKey += fmt.Sprintf("%s;", symbol)
+		}
+
+		// Increment the counts map value for the stack trace symbol string (e.g. "main;subfunc;")
+		totalCount += count
+		counts[symbolsKey] += count
+		traces[symbolsKey] = symbols
 	}
 
-	return p.buildResidencyTable(histogram, totalSamples), nil
+	for k, trace := range traces {
+		for i, symbol := range trace {
+			var parent string
+			// Set the parent function.
+			if i < len(trace)-1 {
+				parent = trace[i+1]
+			}
+			// Last function run.
+			if i == 0 {
+				tree.UpsertNode(symbol, parent, float32(counts[k])/float32(totalCount))
+			} else {
+				tree.UpsertNode(symbol, parent)
+			}
+		}
+	}
+
+	return tree, nil
 }

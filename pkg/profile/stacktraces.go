@@ -30,18 +30,19 @@ func (p *Profiler) getStackTraceByID(stackTraces *bpf.BPFMap, stackID uint32) (*
 // for the process of the ID that is passed as argument.
 // Symbolization is supported for non-stripped ELF executable binaries, because the .symtab
 // ELF section is looked up.
-func (p *Profiler) getHumanReadableStackTrace(stackTrace *StackTrace) string {
-	var symbols string
+func (p *Profiler) getHumanReadableStackTrace(stackTrace *StackTrace) []string {
+	symbols := make([]string, 0)
 
 	for _, ip := range stackTrace {
 		if ip == 0 {
 			continue
 		}
-		s, err := p.symTabELF.GetName(ip)
-		if err != nil || s == "" {
-			symbols += fmt.Sprintf("%#016x;", ip)
+		symbol, err := p.symTabELF.GetName(ip)
+		if err != nil || symbol == "" {
+			// Fallback to hex instruction pointer address.
+			symbol = fmt.Sprintf("%#016x", ip)
 		}
-		symbols += fmt.Sprintf("%s;", s)
+		symbols = append(symbols, symbol)
 	}
 
 	return symbols
