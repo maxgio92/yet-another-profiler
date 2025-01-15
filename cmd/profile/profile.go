@@ -52,10 +52,27 @@ func (o *Options) Run(_ *cobra.Command, _ []string) error {
 		os.Exit(1)
 	}
 
-	// Print stack traces residency fraction table.
-	fmt.Println("Residency Stack trace")
-	for k, v := range report {
-		fmt.Printf("%4.1f%%     %s\n", v*100, k)
+	// Print stack traces DAG.
+	for k, v := range report.Nodes() {
+		if k != "" {
+			fmt.Printf("---\n")
+			fmt.Println(k)
+			if len(v.Parents) > 0 {
+				fmt.Printf("Called from: ")
+				for k, _ := range v.Parents {
+					fmt.Printf("%v();", k)
+				}
+				fmt.Println()
+			}
+			if len(v.Children) > 0 {
+				fmt.Printf("Calls: ")
+				for k, _ := range v.Children {
+					fmt.Printf("%v();", k)
+				}
+				fmt.Println()
+			}
+			fmt.Printf("Weight: %4.2f%%\n", v.Weight*100)
+		}
 	}
 
 	return nil
