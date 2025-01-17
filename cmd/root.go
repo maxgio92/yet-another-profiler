@@ -31,7 +31,7 @@ func NewRootCmd(opts *options.CommonOptions) *cobra.Command {
 func Execute(probe []byte) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
-	logger := log.New(os.Stdout).Level(log.InfoLevel)
+	logger := log.New(os.Stderr).Level(log.InfoLevel)
 
 	go func() {
 		<-ctx.Done()

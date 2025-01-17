@@ -1,76 +1,80 @@
 package dag
 
 import (
-	"sync"
+	"fmt"
+	"gonum.org/v1/gonum/graph/encoding"
+	"gonum.org/v1/gonum/graph/encoding/dot"
+	"gonum.org/v1/gonum/graph/simple"
 )
 
-type key string
+const (
+	dotNodeStyle = "filled"
+)
 
+// Node is a simple implementation of a graph node that
+// includes an integer ID and a label for display.
 type Node struct {
-	Parents  map[key]int8
-	Children map[key]int8
-	Weight   float32
+	id     int64
+	Symbol string
+	Weight float64
 }
 
+// ID returns the unique identifier of the node.
+func (n *Node) ID() int64 {
+	return n.id
+}
+
+// Attributes implements the encoding.Attributer interface.
+func (n *Node) Attributes() []encoding.Attribute {
+	return []encoding.Attribute{
+		{Key: "label", Value: fmt.Sprintf("%s\n%.1f%%", n.Symbol, n.Weight*100)}, // Symbol for the node
+		{Key: "style", Value: dotNodeStyle},
+		{Key: "fillcolor", Value: fmt.Sprintf("0 %.1f 0.9", n.Weight)},
+		{Key: "fontsize", Value: fmt.Sprintf("%.3f", 12+(n.Weight*100))},
+		{Key: "width", Value: fmt.Sprintf("%.3f", n.Weight*10)},
+		{Key: "height", Value: fmt.Sprintf("%.3f", n.Weight*10)},
+	}
+}
+
+// DAG wraps Gonum's directed graph and provides methods to
+// add nodes and edges, as well as export to DOT format.
 type DAG struct {
-	nodes map[key]*Node
-	lock  *sync.RWMutex
+	*simple.DirectedGraph
+	nodes map[int64]*Node
 }
 
+// NewDAG creates a new DAG.
 func NewDAG() *DAG {
-	g := new(DAG)
-	g.nodes = make(map[key]*Node, 0)
-	g.lock = new(sync.RWMutex)
-
-	return g
+	return &DAG{
+		DirectedGraph: simple.NewDirectedGraph(),
+		nodes:         make(map[int64]*Node),
+	}
 }
 
-func (g *DAG) Node(k string) *Node {
-	g.lock.RLock()
-	node := g.nodes[key(k)]
-	g.lock.RUnlock()
-
-	return node
+// AddCustomNode adds a node to the DAG and returns its ID.
+// func (dag *DAG) AddCustomNode(id int64, symbol string, weight float64) {
+func (dag *DAG) AddCustomNode(id int64, symbol string, weight float64) {
+	node := &Node{id: id, Symbol: symbol, Weight: weight}
+	dag.nodes[id] = node
+	dag.AddNode(node)
 }
 
-func (g *DAG) Nodes() map[key]*Node {
-	defer g.lock.RUnlock()
-	g.lock.RLock()
-	nodes := g.nodes
-
-	return nodes
+// AddCustomEdge adds a directed edge between two nodes.
+func (dag *DAG) AddCustomEdge(fromID, toID int64) error {
+	from := dag.nodes[fromID]
+	to := dag.nodes[toID]
+	if from == nil || to == nil {
+		return fmt.Errorf("either from or to node does not exist")
+	}
+	dag.SetEdge(dag.NewEdge(from, to))
+	return nil
 }
 
-func (g *DAG) UpsertNode(k, parent string, weight ...float32) {
-	// Upsert node.
-	g.lock.Lock()
-	if g.nodes[key(k)] == nil {
-		g.nodes[key(k)] = new(Node)
+// DOT returns a DOT representation of the DAG.
+func (dag *DAG) DOT() (string, error) {
+	data, err := dot.Marshal(dag, "DAG", "", "  ")
+	if err != nil {
+		return "", err
 	}
-
-	if g.nodes[key(k)].Parents == nil {
-		g.nodes[key(k)].Parents = make(map[key]int8, 0)
-	}
-
-	g.nodes[key(k)].Parents[key(parent)]++
-	if len(weight) > 0 {
-		g.nodes[key(k)].Weight += weight[0]
-	}
-	g.lock.Unlock()
-
-	// Update parent's children.
-	if g.Node(parent) == nil {
-		g.lock.Lock()
-		g.nodes[key(parent)] = new(Node)
-		g.lock.Unlock()
-	}
-	if g.Node(parent).Children == nil {
-		g.lock.Lock()
-		g.nodes[key(parent)].Children = make(map[key]int8, 0)
-		g.lock.Unlock()
-	}
-
-	g.lock.Lock()
-	g.nodes[key(parent)].Children[key(k)]++
-	g.lock.Unlock()
+	return string(data), nil
 }

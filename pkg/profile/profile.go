@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"unsafe"
 
@@ -107,7 +108,6 @@ func (p *Profiler) RunProfile(ctx context.Context) (*dag.DAG, error) {
 	// Iterate over the stack profile counts histogramMap map.
 	counts := make(map[string]int, 0)
 	traces := make(map[string][]string, 0)
-	tree := dag.NewDAG()
 	totalCount := 0
 
 	p.logger.Debug().Msg("iterating over the retrieved histogramMap items")
@@ -187,27 +187,58 @@ func (p *Profiler) RunProfile(ctx context.Context) (*dag.DAG, error) {
 			symbolsKey += fmt.Sprintf("%s;", symbol)
 		}
 
-		// Increment the counts map value for the stack trace symbol string (e.g. "main;subfunc;")
+		// Update the statistics.
 		totalCount += count
 		counts[symbolsKey] += count
 		traces[symbolsKey] = symbols
 	}
 
-	for k, trace := range traces {
-		for i, symbol := range trace {
-			var parent string
-			// Set the parent function.
-			if i < len(trace)-1 {
-				parent = trace[i+1]
-			}
-			// Last function run.
+	tree, err := buildDAG(counts, traces, totalCount)
+	if err != nil {
+		return nil, errors.Wrap(err, "error building profile DAG")
+	}
+
+	return tree, nil
+}
+
+// buildDAG builds a DAG from the statistics represented by perTraceSampleCounts, totalSampleCount,
+// and the traces map that contains the symbolized function slices.
+func buildDAG(perTraceSampleCounts map[string]int, traces map[string][]string, totalSampleCount int) (*dag.DAG, error) {
+	tree := dag.NewDAG()
+	for k, symbols := range traces {
+		var parentID int64
+		// Traverse the stack trace from parent to child subroutine (top to bottom).
+		for i := len(symbols) - 1; i >= 0; i-- {
+			var weight float64
 			if i == 0 {
-				tree.UpsertNode(symbol, parent, float32(counts[k])/float32(totalCount))
-			} else {
-				tree.UpsertNode(symbol, parent)
+				weight = float64(perTraceSampleCounts[k]) / float64(totalSampleCount)
 			}
+
+			// Generate a hash from the symbol string for reproducibility.
+			// We want a unique node per function so that the directed graph can be generated
+			// as a tree where parent nodes represent callers and child callee functions.
+			id := generateHash(symbols[i])
+			if n := tree.Node(id); n == nil {
+				tree.AddCustomNode(id, symbols[i], weight)
+			}
+
+			// Set relationships in the DAG.
+			if parentID != 0 {
+				err := tree.AddCustomEdge(parentID, id)
+				if err != nil {
+					return nil, err
+				}
+			}
+			parentID = id
 		}
 	}
 
 	return tree, nil
+}
+
+// generateHash generates a fnv-1a hash from a string.
+func generateHash(s string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return int64(h.Sum64())
 }
