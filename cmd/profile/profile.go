@@ -1,23 +1,25 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
-	"os"
 
 	log "github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
 	"github.com/maxgio92/yap/internal/commands/options"
+	"github.com/maxgio92/yap/pkg/dag"
 	"github.com/maxgio92/yap/pkg/profile"
 )
 
 type Options struct {
-	pid int
+	pid          int
+	outputFormat string
 	*options.CommonOptions
 }
 
 func NewCommand(opts *options.CommonOptions) *cobra.Command {
-	o := &Options{0, opts}
+	o := &Options{0, "", opts}
 
 	cmd := &cobra.Command{
 		Use:   "profile",
@@ -25,6 +27,7 @@ func NewCommand(opts *options.CommonOptions) *cobra.Command {
 		RunE:  o.Run,
 	}
 	cmd.Flags().IntVar(&o.pid, "pid", 0, "the PID of the process")
+	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "dot", "the format of output (dot, text)")
 	cmd.MarkFlagRequired("pid")
 
 	return cmd
@@ -48,30 +51,51 @@ func (o *Options) Run(_ *cobra.Command, _ []string) error {
 	// Run profile.
 	report, err := profiler.RunProfile(o.Ctx)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
-	// Print stack traces DAG.
-	for k, v := range report.Nodes() {
-		if k != "" {
-			fmt.Printf("---\n")
-			fmt.Println(k)
-			if len(v.Parents) > 0 {
-				fmt.Printf("Called from: ")
-				for k, _ := range v.Parents {
-					fmt.Printf("%v();", k)
-				}
-				fmt.Println()
-			}
-			if len(v.Children) > 0 {
-				fmt.Printf("Calls: ")
-				for k, _ := range v.Children {
-					fmt.Printf("%v();", k)
-				}
-				fmt.Println()
-			}
-			fmt.Printf("Weight: %4.2f%%\n", v.Weight*100)
+	switch o.outputFormat {
+	case "dot":
+		err = o.printDOT(report)
+	case "text":
+		err = o.printText(report)
+	default:
+		err = o.printText(report)
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// printDOT prints a DOT representation of the profile DAG.
+func (o *Options) printDOT(graph *dag.DAG) error {
+	dot, err := graph.DOT()
+	if err != nil {
+		return err
+	}
+	fmt.Println(dot)
+
+	return nil
+}
+
+// printDOT prints a text representation of the profile DAG.
+func (o *Options) printText(graph *dag.DAG) error {
+	it := graph.Nodes()
+	for it.Next() {
+		n := it.Node()
+		if n == nil {
+			return errors.New("node is nil")
+		}
+
+		v := graph.Node(n.ID())
+		node, ok := v.(*dag.Node)
+		if !ok {
+			return fmt.Errorf("unexpected node type: %T", node)
+		}
+		if node.Weight > 0 {
+			fmt.Printf("%.1f%%	%s\n", node.Weight*100, node.Symbol)
 		}
 	}
 
