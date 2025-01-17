@@ -207,7 +207,8 @@ func buildDAG(perTraceSampleCounts map[string]int, traces map[string][]string, t
 	tree := dag.NewDAG()
 	for k, symbols := range traces {
 		var parentID int64
-		// Traverse the stack trace from parent to child subroutine (top to bottom).
+		// Stack trace is collected in the same order unwinding is done by the kernel,
+		// so from low to top of the stack.
 		for i := len(symbols) - 1; i >= 0; i-- {
 			var weight float64
 			if i == 0 {
