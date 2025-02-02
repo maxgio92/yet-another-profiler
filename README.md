@@ -54,6 +54,8 @@ Options:
       The PID of the process
 ```
 
+For a detailed reference please refer to the [CLI reference](./docs) documentation.
+
 ### Example
 
 Considering a go program made it running in background:
@@ -75,6 +77,14 @@ Residency Stack trace
 65.3%     main.foo;runtime.main;runtime.goexit.abi0;
 32.1%     main.bar;runtime.main;runtime.goexit.abi0;
 ```
+
+### Graphviz support
+
+`yap` can generate a DOT graph to be rendered by specifying the `--output=dot` to the `profile` command.
+
+Considering a profile similar to the one from the example above, a DAG would be generated like below:
+
+![Profile DAG](./docs/profile-dag.dot.svg)
 
 ## Build
 
