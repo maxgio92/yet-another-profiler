@@ -26,10 +26,21 @@ func (n *Node) ID() int64 {
 
 // Attributes implements the encoding.Attributer interface.
 func (n *Node) Attributes() []encoding.Attribute {
+	var leaf bool
+	if n.Weight > 0 {
+		leaf = true
+	}
+
+	label := n.Symbol
+	fillcolor := "0 0 1"
+	if leaf {
+		label += fmt.Sprintf("\n%.1f%%", n.Weight*100)
+		fillcolor = fmt.Sprintf("0 %.1f 0.9", n.Weight)
+	}
 	return []encoding.Attribute{
-		{Key: "label", Value: fmt.Sprintf("%s\n%.1f%%", n.Symbol, n.Weight*100)}, // Symbol for the node
+		{Key: "label", Value: label}, // Symbol for the node
 		{Key: "style", Value: dotNodeStyle},
-		{Key: "fillcolor", Value: fmt.Sprintf("0 %.1f 0.9", n.Weight)},
+		{Key: "fillcolor", Value: fillcolor},
 		{Key: "fontsize", Value: fmt.Sprintf("%.3f", 12+(n.Weight*100))},
 		{Key: "width", Value: fmt.Sprintf("%.3f", n.Weight*10)},
 		{Key: "height", Value: fmt.Sprintf("%.3f", n.Weight*10)},
@@ -67,6 +78,7 @@ func (dag *DAG) AddCustomEdge(fromID, toID int64) error {
 		return fmt.Errorf("either from or to node does not exist")
 	}
 	dag.SetEdge(dag.NewEdge(from, to))
+
 	return nil
 }
 
@@ -76,5 +88,6 @@ func (dag *DAG) DOT() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return string(data), nil
 }
