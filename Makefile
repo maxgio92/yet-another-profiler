@@ -44,6 +44,14 @@ $(PROGRAM): $(LIBBPFGO) | $(PROGRAM)/bpf
 		GOARCH=$(GOARCH) \
 		go build -v -o ${PROGRAM} .
 
+.PHONY: docs
+docs: $(LIBBPFGO)
+	CC=gcc \
+	CGO_CFLAGS=$(CGO_CFLAGS) \
+	CGO_LDFLAGS=$(CGO_LDFLAGS) \
+		GOARCH=$(GOARCH) \
+		go run docs/docs.go
+
 .PHONY: $(PROGRAM)/bpf
 $(PROGRAM)/bpf: $(VMLINUXH)
 	clang $(CFLAGS) -g -O2 -c -target bpf \
