@@ -42,8 +42,8 @@ func (n *Node) Attributes() []encoding.Attribute {
 		{Key: "style", Value: dotNodeStyle},
 		{Key: "fillcolor", Value: fillcolor},
 		{Key: "fontsize", Value: fmt.Sprintf("%.3f", 12+(n.Weight*100))},
-		{Key: "width", Value: fmt.Sprintf("%.3f", n.Weight*10)},
-		{Key: "height", Value: fmt.Sprintf("%.3f", n.Weight*10)},
+		{Key: "width", Value: fmt.Sprintf("%.3f", n.Weight*5)},
+		{Key: "height", Value: fmt.Sprintf("%.3f", n.Weight*5)},
 	}
 }
 
